@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-ios:
-    runs-on: macos-latest
+    runs-on: macos-13
 
     steps:
       - name: Checkout repository
@@ -23,7 +23,7 @@ jobs:
 
       - name: Build iOS unsigned bundle
         run: |
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign -v
           
       - name: Create IPA payload
         run: |
