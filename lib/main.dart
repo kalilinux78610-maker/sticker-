@@ -53,7 +53,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _processAndInstall() async {
     final botToken = _tokenController.text.trim();
-    final packName = _packNameController.text.trim();
+    String packName = _packNameController.text.trim();
+
+    // Auto-extract pack name if the user pastes a full URL
+    if (packName.contains('addstickers/')) {
+      packName = packName.split('addstickers/').last.split('?').first.trim();
+    } else if (packName.contains('/')) {
+      packName = packName.split('/').last.trim();
+    }
 
     if (botToken.isEmpty || packName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter both Token and Pack Name')));
@@ -132,15 +139,22 @@ class _HomeScreenState extends State<HomeScreen> {
          await File(trayImagePath).writeAsBytes(img.encodePng(trayImg));
       }
 
-      await WhatsAppService.installStickerPack(
-        identifier: packName,
-        title: title,
-        trayImagePath: trayImagePath,
-        stickers: whatsappStickers,
-        animated: isAnimated || isVideo,
-      );
-
-      _updateStatus('Done!', 1.0);
+      try {
+        await WhatsAppService.installStickerPack(
+          identifier: packName,
+          title: title,
+          trayImagePath: trayImagePath,
+          stickers: whatsappStickers,
+          animated: isAnimated || isVideo,
+        );
+        _updateStatus('Done! Pack added to WhatsApp.', 1.0);
+      } catch (e) {
+        if (e.toString().contains('MissingPluginException')) {
+           _updateStatus('Downloads Complete! (WhatsApp injection is not supported on Windows/Web. Test on an Android device to finish the pipeline!)', 1.0);
+        } else {
+           rethrow;
+        }
+      }
     } catch (e) {
       _updateStatus('Error: $e');
       if (mounted) {

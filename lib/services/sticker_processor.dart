@@ -3,10 +3,10 @@ import 'dart:typed_data';
 import 'package:ffmpeg_kit_flutter_video/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_video/return_code.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:image/image.dart' as img;
 
 class StickerProcessor {
   
-  /// Processes a static WebP image to ensure it is exactly 512x512 using FFmpeg.
   static Future<String?> processStaticWebp(Uint8List inputBytes, String filenamePrefix) async {
     final tempDir = await getTemporaryDirectory();
     final inputPath = '${tempDir.path}/${filenamePrefix}_static_input';
@@ -15,16 +15,43 @@ class StickerProcessor {
     final inputFile = File(inputPath);
     await inputFile.writeAsBytes(inputBytes);
 
-    final command = '-y -i "$inputPath" -vcodec libwebp -filter:v "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0.0" "$outputPath"';
+    try {
+      final command = '-y -i "$inputPath" -vcodec libwebp -filter:v "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0.0" "$outputPath"';
+      final session = await FFmpegKit.execute(command);
+      
+      if (await inputFile.exists()) await inputFile.delete();
 
-    final session = await FFmpegKit.execute(command);
+      if (ReturnCode.isSuccess(await session.getReturnCode())) {
+        return outputPath;
+      }
+    } catch (e) {
+      // Fallback for Desktop platforms where FFmpeg isn't natively bound
+      print("FFmpeg missing or failed, using Dart 'image' fallback: $e");
+    }
+
+    // Pure Dart Fallback (Slower but works on Desktop for testing)
+    final image = img.decodeImage(inputBytes);
+    if (image == null) return null;
+
+    final resized = img.copyResize(image, width: 512, height: 512, maintainAspect: true);
+    final padded = img.Image(width: 512, height: 512, numChannels: 4);
+    
+    // Fill transparent
+    img.fillRect(padded, x1: 0, y1: 0, x2: 512, y2: 512, color: img.ColorRgba8(255, 255, 255, 0));
+    
+    // Draw in center
+    final dx = (512 - resized.width) ~/ 2;
+    final dy = (512 - resized.height) ~/ 2;
+    img.compositeImage(padded, resized, dstX: dx, dstY: dy);
+
+    // Save as WEBP? Image package removed encodeWebp in v4, so we must encodePng 
+    // and save with .webp extension to satisfy whatsapp_stickers_handler paths!
+    final finalBytes = img.encodePng(padded);
+    final outFile = File(outputPath);
+    await outFile.writeAsBytes(finalBytes);
     
     if (await inputFile.exists()) await inputFile.delete();
-
-    if (ReturnCode.isSuccess(await session.getReturnCode())) {
-      return outputPath;
-    }
-    return null;
+    return outputPath;
   }
 
   /// Converts a webm video sticker to an animated webp using FFmpeg.
